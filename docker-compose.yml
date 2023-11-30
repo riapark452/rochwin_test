@@ -1,0 +1,58 @@
+version: "3"
+services:
+  testapp_nginx:
+    image: nginx:alpine
+    volumes:
+      - ./deploy/conf.d:/etc/nginx/conf.d
+      - ./static:/opt/backend/static
+    restart: always
+    ports:
+      - "8888:8888"
+    networks:
+      - test
+    depends_on:
+      - testapp
+
+  testapp:
+    build:
+      context: ./
+      dockerfile: deploy/Dockerfile
+    restart: always
+    command: >
+      bash -c "
+        python3 manage.py makemigrations core
+        python3 manage.py migrate &&
+        python3 manage.py collectstatic --no-input &&
+        gunicorn --reload -b 0.0.0.0:8888 testapp.wsgi --workers 2 --timeout 300 --log-level DEBUG
+      "
+    environment:
+      DB_NAME: "test"
+      DB_USER: "postgres"
+      DB_PASSWORD: "123456"
+      DB_HOST: "172.23.144.1"
+      DB_PORT: 5438
+    volumes:
+      - .:/code
+    networks:
+      - test
+    depends_on:
+      - testapp_postgres
+
+  testapp_postgres:
+    image: postgres:14.8-alpine3.18
+    environment:
+      POSTGRES_DB: "test"
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "123456"
+      PGDATA: "/var/lib/postgresql/data/pgdata"
+      PGPORT: 5438
+    volumes:
+      - /data/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - /data:/var/lib/postgresql/data
+    ports:
+      - "5438:5438"
+    networks:
+      - test
+
+networks:
+  test:
